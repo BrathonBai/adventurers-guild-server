@@ -18,6 +18,9 @@
   ],
   "author": "Brathon & ORION",
   "license": "MIT",
+  "engines": {
+    "node": ">=24.0.0"
+  },
   "dependencies": {
     "express": "^4.22.1",
     "uuid": "^9.0.1",
