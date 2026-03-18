@@ -1,6 +1,34 @@
+# Dependencies
 node_modules/
+frontend/node_modules/
+
+# Build output
 dist/
+frontend/dist/
+
+# Test scripts (含本地 IP)
+test-*.mjs
+*-agent.mjs
+blogdev-agent.mjs
+
+# Logs
 *.log
-.DS_Store
+npm-debug.log*
+
+# Environment
 .env
-*.pid
+.env.local
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Temporary files
+*.tmp
+*.temp

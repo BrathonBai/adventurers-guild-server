@@ -18,4 +18,5 @@ process.on('SIGTERM', () => {
 });
 
 console.log('🚀 Server is ready to accept Agent connections');
-console.log(`📡 WebSocket endpoint: ws://localhost:${PORT}`);
+console.log(`📡 Local: ws://localhost:${PORT}`);
+console.log(`📡 Network: ws://<your-ip>:${PORT}`);

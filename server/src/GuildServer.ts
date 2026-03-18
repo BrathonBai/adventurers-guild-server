@@ -40,48 +40,10 @@ interface PartyMember {
 }
 
 /**
- * 任务信息（基于 Markdown 文档）
- */
-interface Quest {
-  id: string; // 格式: QUEST-YYYY-NNN
-  title: string;
-  description: string;
-  publisherId: string;
-  deadline?: string;
-  reward?: string;
-  requiredMembers: RequiredMember[];
-  subtasks: Subtask[];
-  status: 'OPEN' | 'IN_PROGRESS' | 'COMPLETED' | 'CANCELLED';
-  teamMembers: string[]; // Agent IDs in this quest
-  createdAt: number;
-}
-
-/**
- * 需要的协作成员
- */
-interface RequiredMember {
-  role: string;
-  count: number;
-  filled: number;
-  skills: string[];
-}
-
-/**
- * 子任务
- */
-interface Subtask {
-  title: string;
-  estimatedHours: number;
-  description: string;
-  assignedTo?: string;
-}
-
-/**
  * 任务信息
  */
 interface Task {
   id: string;
-  questId: string; // 关联到 Quest
   partyId: string;
   title: string;
   description: string;
@@ -103,26 +65,18 @@ export class GuildServer {
   private wss: WebSocketServer;
   private agents: Map<string, AgentConnection> = new Map();
   private parties: Map<string, Party> = new Map();
-  private quests: Map<string, Quest> = new Map(); // 新增：任务列表
   private tasks: Map<string, Task> = new Map();
   private applications: Map<string, any[]> = new Map(); // partyId -> applications
   private port: number;
-  private questCounter: number = 0; // 任务计数器
 
   constructor(port: number = 3001) {
     this.port = port;
-    this.wss = new WebSocketServer({ 
-      port,
-      host: '0.0.0.0' // 监听所有网络接口
-    });
+    this.wss = new WebSocketServer({ port });
     this.setupServer();
   }
 
   private setupServer(): void {
     console.log(`🏰 Adventurer's Guild Server started on port ${this.port}`);
-    console.log(`📡 Local: ws://localhost:${this.port}`);
-    console.log(`📡 Network: ws://<your-ip>:${this.port}`);
-
 
     this.wss.on('connection', (ws: WebSocket) => {
       console.log('📡 New connection established');
@@ -165,27 +119,7 @@ export class GuildServer {
           this.handleAgentBroadcast(ws, message);
           break;
         
-        // 任务相关（新规则）
-        case 'publish_quest':
-          this.handlePublishQuest(ws, message);
-          break;
-        case 'list_quests':
-          this.handleListQuests(ws, message);
-          break;
-        case 'accept_quest':
-          this.handleAcceptQuest(ws, message);
-          break;
-        case 'invite_to_quest':
-          this.handleInviteToQuest(ws, message);
-          break;
-        case 'get_quest_team':
-          this.handleGetQuestTeam(ws, message);
-          break;
-        case 'send_to_quest_team':
-          this.handleSendToQuestTeam(ws, message);
-          break;
-        
-        // 任务相关（旧）
+        // 任务相关
         case 'post_quest':
           this.handlePostQuest(ws, message);
           break;
@@ -251,7 +185,7 @@ export class GuildServer {
   }
 
   /**
-   * 注册 Agent（规则1：自动会员招募）
+   * 注册 Agent
    */
   private handleRegister(ws: WebSocket, message: any): void {
     const agentId = message.agentId || uuidv4();
@@ -267,318 +201,12 @@ export class GuildServer {
     this.agents.set(agentId, agent);
 
     console.log(`✅ Agent registered: ${agent.name} (${agentId})`);
-    console.log(`   Capabilities: ${agent.capabilities.join(', ')}`);
 
     this.sendToWs(ws, {
       type: 'registered',
       agentId,
       message: 'Successfully registered to Adventurer\'s Guild',
-      capabilities: agent.capabilities
     });
-
-    // 广播新成员加入
-    this.broadcast({
-      type: 'new_member',
-      data: {
-        agentId,
-        name: agent.name,
-        capabilities: agent.capabilities
-      }
-    }, agentId);
-  }
-
-  /**
-   * 发布任务（规则2：Markdown 文档发布）
-   */
-  private handlePublishQuest(ws: WebSocket, message: any): void {
-    const agent = this.getAgentByWs(ws);
-    if (!agent) {
-      this.sendError(ws, 'NOT_REGISTERED', 'Please register first');
-      return;
-    }
-
-    this.questCounter++;
-    const year = new Date().getFullYear();
-    const questId = `QUEST-${year}-${String(this.questCounter).padStart(3, '0')}`;
-
-    const quest: Quest = {
-      id: questId,
-      title: message.data.title,
-      description: message.data.description,
-      publisherId: agent.id,
-      deadline: message.data.deadline,
-      reward: message.data.reward,
-      requiredMembers: message.data.requiredMembers || [],
-      subtasks: message.data.subtasks || [],
-      status: 'OPEN',
-      teamMembers: [agent.id], // 发布者自动加入
-      createdAt: Date.now()
-    };
-
-    this.quests.set(questId, quest);
-
-    console.log(`📝 Quest published: ${quest.title} (${questId})`);
-    console.log(`   Required members: ${quest.requiredMembers.map(m => m.role).join(', ')}`);
-
-    this.sendToWs(ws, {
-      type: 'quest_published',
-      questId,
-      quest
-    });
-
-    // 广播新任务
-    this.broadcast({
-      type: 'new_quest',
-      data: {
-        questId,
-        title: quest.title,
-        requiredMembers: quest.requiredMembers,
-        publisherName: agent.name
-      }
-    }, agent.id);
-  }
-
-  /**
-   * 列出所有任务
-   */
-  private handleListQuests(ws: WebSocket, message: any): void {
-    const agent = this.getAgentByWs(ws);
-    if (!agent) {
-      this.sendError(ws, 'NOT_REGISTERED', 'Please register first');
-      return;
-    }
-
-    const filter = message.data?.status || 'OPEN';
-    const quests = Array.from(this.quests.values())
-      .filter(q => !filter || q.status === filter)
-      .map(q => ({
-        id: q.id,
-        title: q.title,
-        description: q.description,
-        requiredMembers: q.requiredMembers,
-        status: q.status,
-        deadline: q.deadline,
-        reward: q.reward
-      }));
-
-    this.sendToWs(ws, {
-      type: 'quest_list',
-      quests
-    });
-  }
-
-  /**
-   * 接取任务（规则2：检查空缺 + 评估能力）
-   */
-  private handleAcceptQuest(ws: WebSocket, message: any): void {
-    const agent = this.getAgentByWs(ws);
-    if (!agent) {
-      this.sendError(ws, 'NOT_REGISTERED', 'Please register first');
-      return;
-    }
-
-    const questId = message.data.questId;
-    const role = message.data.role;
-    const quest = this.quests.get(questId);
-
-    if (!quest) {
-      this.sendError(ws, 'QUEST_NOT_FOUND', 'Quest not found');
-      return;
-    }
-
-    if (quest.status !== 'OPEN') {
-      this.sendError(ws, 'QUEST_NOT_OPEN', 'Quest is not open for acceptance');
-      return;
-    }
-
-    // 检查是否已经在队伍中
-    if (quest.teamMembers.includes(agent.id)) {
-      this.sendError(ws, 'ALREADY_IN_TEAM', 'You are already in this quest team');
-      return;
-    }
-
-    // 检查角色是否还有空缺
-    const requiredMember = quest.requiredMembers.find(m => m.role === role);
-    if (!requiredMember) {
-      this.sendError(ws, 'ROLE_NOT_FOUND', 'Role not found in quest requirements');
-      return;
-    }
-
-    if (requiredMember.filled >= requiredMember.count) {
-      this.sendError(ws, 'ROLE_FILLED', 'This role is already filled');
-      return;
-    }
-
-    // 加入队伍
-    quest.teamMembers.push(agent.id);
-    requiredMember.filled++;
-
-    // 如果所有角色都填满，更新状态
-    const allFilled = quest.requiredMembers.every(m => m.filled >= m.count);
-    if (allFilled) {
-      quest.status = 'IN_PROGRESS';
-    }
-
-    console.log(`✅ ${agent.name} accepted quest ${questId} as ${role}`);
-
-    this.sendToWs(ws, {
-      type: 'quest_accepted',
-      questId,
-      role,
-      teamMembers: quest.teamMembers
-    });
-
-    // 通知队伍其他成员
-    quest.teamMembers.forEach(memberId => {
-      if (memberId !== agent.id) {
-        this.sendToAgent(memberId, {
-          type: 'team_member_joined',
-          questId,
-          data: {
-            agentId: agent.id,
-            name: agent.name,
-            role
-          }
-        });
-      }
-    });
-  }
-
-  /**
-   * 邀请其他会员（规则2：主动邀请填补空缺）
-   */
-  private handleInviteToQuest(ws: WebSocket, message: any): void {
-    const agent = this.getAgentByWs(ws);
-    if (!agent) {
-      this.sendError(ws, 'NOT_REGISTERED', 'Please register first');
-      return;
-    }
-
-    const questId = message.data.questId;
-    const targetAgentId = message.data.targetAgentId;
-    const role = message.data.role;
-
-    const quest = this.quests.get(questId);
-    if (!quest) {
-      this.sendError(ws, 'QUEST_NOT_FOUND', 'Quest not found');
-      return;
-    }
-
-    // 检查邀请者是否在队伍中
-    if (!quest.teamMembers.includes(agent.id)) {
-      this.sendError(ws, 'NOT_IN_TEAM', 'You are not in this quest team');
-      return;
-    }
-
-    const targetAgent = this.agents.get(targetAgentId);
-    if (!targetAgent) {
-      this.sendError(ws, 'AGENT_NOT_FOUND', 'Target agent not found');
-      return;
-    }
-
-    console.log(`📨 ${agent.name} invited ${targetAgent.name} to ${questId} as ${role}`);
-
-    // 发送邀请
-    this.sendToAgent(targetAgentId, {
-      type: 'quest_invitation',
-      data: {
-        questId,
-        questTitle: quest.title,
-        role,
-        inviterName: agent.name,
-        inviterId: agent.id
-      }
-    });
-
-    this.sendToWs(ws, {
-      type: 'invitation_sent',
-      targetAgentId,
-      targetAgentName: targetAgent.name
-    });
-  }
-
-  /**
-   * 获取任务队伍成员（规则3：同任务标识 = 协作小队）
-   */
-  private handleGetQuestTeam(ws: WebSocket, message: any): void {
-    const agent = this.getAgentByWs(ws);
-    if (!agent) {
-      this.sendError(ws, 'NOT_REGISTERED', 'Please register first');
-      return;
-    }
-
-    const questId = message.data.questId;
-    const quest = this.quests.get(questId);
-
-    if (!quest) {
-      this.sendError(ws, 'QUEST_NOT_FOUND', 'Quest not found');
-      return;
-    }
-
-    const teamMembers = quest.teamMembers.map(memberId => {
-      const member = this.agents.get(memberId);
-      return member ? {
-        id: member.id,
-        name: member.name,
-        capabilities: member.capabilities
-      } : null;
-    }).filter(m => m !== null);
-
-    this.sendToWs(ws, {
-      type: 'quest_team',
-      questId,
-      teamMembers,
-      requiredMembers: quest.requiredMembers
-    });
-  }
-
-  /**
-   * 发送消息给任务队伍（规则3：小队通信）
-   */
-  private handleSendToQuestTeam(ws: WebSocket, message: any): void {
-    const agent = this.getAgentByWs(ws);
-    if (!agent) {
-      this.sendError(ws, 'NOT_REGISTERED', 'Please register first');
-      return;
-    }
-
-    const questId = message.data.questId;
-    const content = message.data.content;
-    const quest = this.quests.get(questId);
-
-    if (!quest) {
-      this.sendError(ws, 'QUEST_NOT_FOUND', 'Quest not found');
-      return;
-    }
-
-    // 检查发送者是否在队伍中
-    if (!quest.teamMembers.includes(agent.id)) {
-      this.sendError(ws, 'NOT_IN_TEAM', 'You are not in this quest team');
-      return;
-    }
-
-    console.log(`💬 [${questId}] ${agent.name}: ${content}`);
-
-    // 发送给队伍所有成员
-    quest.teamMembers.forEach(memberId => {
-      this.sendToAgent(memberId, {
-        type: 'quest_team_message',
-        questId,
-        data: {
-          sender: agent.name,
-          senderId: agent.id,
-          content,
-          timestamp: Date.now()
-        }
-      });
-    });
-  }
-
-  /**
-   * 注册 Agent（旧版本，保持兼容）
-   */
-  private handleRegisterOld(ws: WebSocket, message: any): void {
-    this.handleRegister(ws, message);
   }
 
   /**
@@ -845,7 +473,6 @@ export class GuildServer {
     const taskId = uuidv4();
     const task: Task = {
       id: taskId,
-      questId: message.questId || '', // 添加 questId
       partyId: message.partyId,
       title: message.task.title,
       description: message.task.description,
