@@ -19,32 +19,46 @@ jobs:
         node-version: '18'
         cache: 'npm'
     
-    - name: Install dependencies
+    - name: Install root dependencies
       run: npm ci
     
-    - name: Build TypeScript
+    - name: Build frontend
       run: npm run build
+    
+    - name: Install server dependencies
+      run: cd server && npm ci
+    
+    - name: Build server
+      run: cd server && npm run build
     
     - name: Start server (background)
       run: |
-        nohup npm start > server.log 2>&1 &
-        echo $! > server.pid
+        cd server
+        nohup npm start > ../server.log 2>&1 &
+        echo $! > ../server.pid
         sleep 5
     
     - name: Check server status
       run: |
         if ps -p $(cat server.pid) > /dev/null; then
           echo "✅ Server is running"
-          curl -f http://localhost:3001 || echo "Server started but not responding yet"
+          echo "Server PID: $(cat server.pid)"
+          curl -f http://localhost:5173 || echo "UI not responding yet"
+          curl -f http://localhost:3000 || echo "WebSocket not responding yet"
         else
           echo "❌ Server failed to start"
           cat server.log
           exit 1
         fi
     
-    - name: Keep server alive (optional)
+    - name: Show server logs
+      run: |
+        echo "=== Server Logs ==="
+        cat server.log
+    
+    - name: Keep server alive (5 minutes for testing)
       run: |
         echo "Server is running in background"
         echo "PID: $(cat server.pid)"
-        tail -f server.log &
-        sleep 300  # Keep alive for 5 minutes for testing
+        echo "Keeping alive for 5 minutes..."
+        sleep 300
