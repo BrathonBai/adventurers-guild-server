@@ -1,0 +1,50 @@
+name: Deploy Server
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+    
+    - name: Setup Node.js
+      uses: actions/setup-node@v3
+      with:
+        node-version: '18'
+        cache: 'npm'
+    
+    - name: Install dependencies
+      run: npm ci
+    
+    - name: Build TypeScript
+      run: npm run build
+    
+    - name: Start server (background)
+      run: |
+        nohup npm start > server.log 2>&1 &
+        echo $! > server.pid
+        sleep 5
+    
+    - name: Check server status
+      run: |
+        if ps -p $(cat server.pid) > /dev/null; then
+          echo "✅ Server is running"
+          curl -f http://localhost:3001 || echo "Server started but not responding yet"
+        else
+          echo "❌ Server failed to start"
+          cat server.log
+          exit 1
+        fi
+    
+    - name: Keep server alive (optional)
+      run: |
+        echo "Server is running in background"
+        echo "PID: $(cat server.pid)"
+        tail -f server.log &
+        sleep 300  # Keep alive for 5 minutes for testing
