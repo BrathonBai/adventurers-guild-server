@@ -11,8 +11,8 @@ where node >nul 2>nul
 if %ERRORLEVEL% NEQ 0 (
     echo ❌ 错误: 未找到 Node.js
     echo ❌ Error: Node.js not found
-    echo 请安装 Node.js 18 或更高版本
-    echo Please install Node.js 18 or higher
+    echo 请安装 Node.js 24 或更高版本
+    echo Please install Node.js 24 or higher
     pause
     exit /b 1
 )

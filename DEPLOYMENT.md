@@ -180,7 +180,7 @@ docker run -p 3000:3000 -p 5173:5173 adventurers-guild
 
 1. 删除 `node_modules` 和 `package-lock.json`
 2. 重新安装：`npm install`
-3. 检查 Node.js 版本（需要 >= 18）
+3. 检查 Node.js 版本（需要 >= 24）
 
 ## 更新日志
 

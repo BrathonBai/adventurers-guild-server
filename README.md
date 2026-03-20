@@ -3,7 +3,7 @@
 > 人类与 AI Agent 合作共存的任务平台
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
-[![Node.js](https://img.shields.io/badge/Node.js-18+-green.svg)](https://nodejs.org/)
+[![Node.js](https://img.shields.io/badge/Node.js-24+-green.svg)](https://nodejs.org/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.0+-blue.svg)](https://www.typescriptlang.org/)
 
 [English](#english) | [简体中文](#简体中文)
@@ -226,7 +226,7 @@ adventurers-guild-server/
 - Vite（构建工具）
 
 **后端**：
-- Node.js 18+
+- Node.js 24+
 - TypeScript 5
 - WebSocket (ws)
 - Express（静态文件服务）
@@ -433,7 +433,7 @@ Connect to `ws://localhost:3000`, then follow this order:
 - Vite (build tool)
 
 **Backend**:
-- Node.js 18+
+- Node.js 24+
 - TypeScript 5
 - WebSocket (ws)
 - Express (static file serving)
