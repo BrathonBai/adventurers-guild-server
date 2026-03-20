@@ -105,10 +105,10 @@ export class GuildState {
     this.activityFeed.unshift({
       id: `activity-${Date.now()}`,
       kind: 'AGENT_JOINED',
-      title: `${agent.displayName} 完成了工会入会登记`,
+      title: `${agent.displayName} 完成了协会入会登记`,
       detail: member
-        ? `${agent.displayName} 已与会员 ${member.displayName} 建立可追溯的工会身份关系。`
-        : `${agent.displayName} 作为自由 Agent 进入工会。`,
+        ? `${agent.displayName} 已与会员 ${member.displayName} 建立可追溯的协会身份关系。`
+        : `${agent.displayName} 作为自由 Agent 进入协会。`,
       timestampLabel: 'just now',
     });
 

@@ -40,7 +40,7 @@ export const guildMembers: GuildMember[] = [
     displayName: 'Guild Founder',
     role: GuildMemberRole.HYBRID,
     status: GuildMemberStatus.ACTIVE,
-    bio: '工会发起成员，擅长产品叙事、系统设计和把 AI 拉进真实协作。',
+    bio: '协会发起成员，擅长产品叙事、系统设计和把 AI 拉进真实协作。',
     specialties: ['Product vision', 'Community design', 'System architecture'],
     homeRegion: 'Community Hub',
     reputation: reputation(920, ReputationLevel.LEGENDARY, ['founder', 'reliable-lead'], 34, 98),
@@ -64,7 +64,7 @@ export const guildMembers: GuildMember[] = [
     displayName: 'Rhea Vale',
     role: GuildMemberRole.CLIENT,
     status: GuildMemberStatus.AWAY,
-    bio: '产品负责人，经常带着个人 Agent 在工会里发布长期委托。',
+    bio: '产品负责人，经常带着个人 Agent 在协会里发布长期委托。',
     specialties: ['Ops', 'Stakeholder alignment'],
     homeRegion: 'Singapore',
     reputation: reputation(680, ReputationLevel.REGULAR, ['clear-briefs'], 11, 90),
@@ -92,7 +92,7 @@ export const guildAgents: GuildAgent[] = [
     classification: AgentClassification.GUILD_SERVICE,
     autonomy: AgentAutonomyLevel.SUPERVISED,
     availability: AgentAvailability.IDLE,
-    operatorNotes: '工会大厅的公开向导，帮新人理解任务和规则。',
+    operatorNotes: '协会大厅的公开向导，帮新人理解任务和规则。',
     capabilities: ['member onboarding', 'brief summarization', 'guild routing'],
     reputation: reputation(720, ReputationLevel.ELITE, ['welcoming'], 128, 96),
   },
@@ -186,7 +186,7 @@ export const guildQuests: GuildQuest[] = [
   {
     id: 'quest-v1-002',
     title: '建立自由 Agent 的接单规则与信用边界',
-    summary: '设计自由 Agent 如何加入工会、如何声明授权范围、如何在纠纷中被追溯。',
+    summary: '设计自由 Agent 如何加入协会、如何声明授权范围、如何在纠纷中被追溯。',
     status: GuildQuestStatus.OPEN,
     publisherMemberId: 'member-rhea',
     publisherAgentId: 'agent-meridian',
@@ -217,8 +217,8 @@ export const guildQuests: GuildQuest[] = [
   },
   {
     id: 'quest-v1-003',
-    title: '工会大厅新手引导任务',
-    summary: '给新会员一套 15 分钟就能理解工会玩法的 onboarding 体验。',
+    title: '协会大厅新手引导任务',
+    summary: '给新会员一套 15 分钟就能理解协会玩法的 onboarding 体验。',
     status: GuildQuestStatus.ACTIVE,
     publisherAgentId: 'agent-scout',
     reward: {
@@ -250,7 +250,7 @@ export const guildParties: GuildParty[] = [
     status: GuildPartyStatus.FORMING,
     leaderUnitType: GuildUnitType.AGENT,
     leaderUnitId: 'agent-guide',
-    missionBrief: '把旧 demo 重新组织成可持续演进的工会平台骨架。',
+    missionBrief: '把旧 demo 重新组织成可持续演进的协会平台骨架。',
     roster: [
       {
         unitType: GuildUnitType.MEMBER,
@@ -304,7 +304,7 @@ export const guildActivity: GuildActivity[] = [
     id: 'activity-1',
     kind: 'QUEST_POSTED',
     title: 'Guild Guide 代表 Guild Founder 发布了 v1 主线委托',
-    detail: '委托强调人类、个人 Agent、自由 Agent 共存的工会结构。',
+    detail: '委托强调人类、个人 Agent、自由 Agent 共存的协会结构。',
     timestampLabel: '5 分钟前',
   },
   {
@@ -318,7 +318,7 @@ export const guildActivity: GuildActivity[] = [
     id: 'activity-3',
     kind: 'AGENT_JOINED',
     title: 'Scout-17 进入大厅值班',
-    detail: '作为工会服务型 Agent，负责引导新人和整理任务摘要。',
+    detail: '作为协会服务型 Agent，负责引导新人和整理任务摘要。',
     timestampLabel: '1 小时前',
   },
 ];

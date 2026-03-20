@@ -8,7 +8,7 @@ function App() {
   const [snapshot, setSnapshot] = useState<GuildSnapshot>(guildV1Demo);
   const [recruitmentBook, setRecruitmentBook] = useState<RecruitmentBookPacket | null>(null);
   const [isSyncing, setIsSyncing] = useState(false);
-  const [connectionNote, setConnectionNote] = useState('当前显示的是本地工会演示数据。');
+  const [connectionNote, setConnectionNote] = useState('当前显示的是本地协会演示数据。');
 
   useEffect(() => {
     void refreshGuildData();
@@ -39,7 +39,7 @@ function App() {
       setRecruitmentBook(nextBook);
     }
 
-    setConnectionNote('新的 Agent 已通过正式入会协议加入工会。');
+    setConnectionNote('新的 Agent 已通过正式入会协议加入协会。');
   };
 
   return (

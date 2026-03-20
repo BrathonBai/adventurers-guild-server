@@ -1,11 +1,11 @@
 #!/bin/bash
 
-# 冒险家协会 - 一键启动脚本
+# 冒险者协会 - 一键启动脚本
 # Adventurer's Guild - One-Click Start Script
 
 set -e
 
-echo "🌌 冒险家协会 - 启动中..."
+echo "🌌 冒险者协会 - 启动中..."
 echo "Adventurer's Guild - Starting..."
 echo ""
 

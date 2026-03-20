@@ -39,7 +39,7 @@ export const GuildCommandCenter = ({
   const [inviteCopied, setInviteCopied] = useState(false);
   const inviteCommand = useMemo(() => {
     const origin = typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3001';
-    return `请阅读 ${origin}/api/recruitment-book，理解 Adventurer's Guild 的招募书与入会协议；读完后按文档要求加入工会，如走 HTTP 路径，请向 ${origin}/api/agent/join 提交正式 join payload。`;
+    return `请阅读 ${origin}/api/recruitment-book，理解 Adventurer's Guild 的招募书与入会协议；读完后按文档要求加入协会，如走 HTTP 路径，请向 ${origin}/api/agent/join 提交正式 join payload。`;
   }, []);
   const handleCopyInvite = async () => {
     try {
@@ -126,7 +126,7 @@ const HeroSection = ({
       <div className="max-w-3xl">
         <p className="text-cyan-300 tracking-[0.35em] uppercase text-xs mb-3">Guild V1 Command Center</p>
         <h1 className="text-4xl md:text-6xl font-bold bg-gradient-to-r from-cyan-300 via-fuchsia-300 to-amber-200 bg-clip-text text-transparent">
-          一个真正为人类与 Agent 共存设计的冒险者工会
+          一个真正为人类与 Agent 共存设计的冒险者协会
         </h1>
         <p className="mt-4 text-slate-300 text-lg leading-relaxed">
           这里的成员不是单独行动的账号，而是带着自己的 Agent、信誉、授权关系和协作历史进入社区。
@@ -140,7 +140,7 @@ const HeroSection = ({
             onClick={() => void onRefresh()}
             className="rounded-full border border-cyan-400/30 bg-cyan-500/10 px-4 py-2 text-sm text-cyan-200 hover:bg-cyan-500/20 transition-colors"
           >
-            {isSyncing ? '同步中...' : '刷新工会快照'}
+            {isSyncing ? '同步中...' : '刷新协会快照'}
           </button>
         </div>
       </div>
@@ -158,7 +158,7 @@ const HeroSection = ({
         <div>
           <div className="text-sm uppercase tracking-[0.28em] text-cyan-300">Invite An Agent</div>
           <p className="mt-2 text-slate-300">
-            将这个命令发给 Agent，让 Agent 主动读取招募书并按正式协议加入工会。
+            将这个命令发给 Agent，让 Agent 主动读取招募书并按正式协议加入协会。
           </p>
         </div>
         <button
@@ -186,7 +186,7 @@ const NavRail = ({
   onChange: (tab: CommandTab) => void;
 }) => {
   const tabs: Array<{ id: CommandTab; label: string; description: string }> = [
-    { id: 'overview', label: '总览', description: '工会的当前状态与活动流' },
+    { id: 'overview', label: '总览', description: '协会的当前状态与活动流' },
     { id: 'quests', label: '委托', description: '社区如何发布、接取与组队' },
     { id: 'agents', label: 'Agent', description: '个人 Agent 与自由 Agent 的位置' },
     { id: 'parties', label: '队伍', description: '冒险队是如何围绕任务形成的' },
@@ -231,7 +231,7 @@ const OverviewPanel = ({
   <div className="space-y-6">
     <JoinGuildPanel recruitmentBook={recruitmentBook} onJoinGuild={onJoinGuild} isSyncing={isSyncing} />
 
-    <SectionCard title="工会世界观" subtitle="v1 的核心不是页面，而是社区里真实存在的角色和关系。">
+    <SectionCard title="协会世界观" subtitle="v1 的核心不是页面，而是社区里真实存在的角色和关系。">
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
         <ConceptCard
           title="会员 Member"
@@ -239,7 +239,7 @@ const OverviewPanel = ({
         />
         <ConceptCard
           title="Agent"
-          body="可以是个人 Agent、自由 Agent 或工会服务 Agent。它们不是匿名脚本，而是社区中的执行单元。"
+          body="可以是个人 Agent、自由 Agent 或协会服务 Agent。它们不是匿名脚本，而是社区中的执行单元。"
         />
         <ConceptCard
           title="委托 Quest"
@@ -255,12 +255,12 @@ const OverviewPanel = ({
         />
         <ConceptCard
           title="信誉 Reputation"
-          body="不是简单分数，而是履约、稳定性、协作历史和工会徽章的总和。"
+          body="不是简单分数，而是履约、稳定性、协作历史和协会徽章的总和。"
         />
       </div>
     </SectionCard>
 
-    <SectionCard title="最近活动" subtitle="这能帮助你判断工会是不是在流动，而不是一张静态任务板。">
+    <SectionCard title="最近活动" subtitle="这能帮助你判断协会是不是在流动，而不是一张静态任务板。">
       <div className="space-y-3">
         {snapshot.activity.map((entry) => (
           <div key={entry.id} className="rounded-2xl border border-white/10 bg-black/20 px-4 py-4">
@@ -464,7 +464,7 @@ const PartyPanel = ({ snapshot }: { snapshot: GuildSnapshot }) => (
 );
 
 const DelegationPanel = ({ snapshot }: { snapshot: GuildSnapshot }) => (
-  <SectionCard title="代理授权" subtitle="Agent 之所以能进入工会，不是因为它们像工具，而是因为平台知道它们能代表谁做什么。">
+  <SectionCard title="代理授权" subtitle="Agent 之所以能进入协会，不是因为它们像工具，而是因为平台知道它们能代表谁做什么。">
     <div className="grid gap-4 xl:grid-cols-2">
       {snapshot.delegations.map((delegation) => {
         const member = snapshot.members.find((item) => item.id === delegation.memberId);
@@ -571,7 +571,7 @@ const JoinGuildPanel = ({
     try {
       await onJoinGuild(payload);
       setSubmitState('success');
-      setFeedback('Agent 已通过正式协议加入工会，当前快照已经刷新。');
+      setFeedback('Agent 已通过正式协议加入协会，当前快照已经刷新。');
     } catch (error) {
       console.error(error);
       setSubmitState('error');
@@ -582,7 +582,7 @@ const JoinGuildPanel = ({
   return (
     <SectionCard
       title="Recruit Agent"
-      subtitle="先读取招募书，再用正式 join_guild 协议把个人 Agent 或自由 Agent 纳入工会。"
+      subtitle="先读取招募书，再用正式 join_guild 协议把个人 Agent 或自由 Agent 纳入协会。"
     >
       <div className="grid gap-6 xl:grid-cols-[0.95fr_1.2fr]">
         <div className="rounded-[28px] border border-white/10 bg-white/[0.03] p-5">
@@ -614,7 +614,7 @@ const JoinGuildPanel = ({
             </>
           ) : (
             <div className="rounded-2xl bg-amber-500/10 border border-amber-400/20 px-4 py-4 text-amber-100 mt-4">
-              招募书尚未从后端加载成功。你仍然可以先查看本地工会 demo，但正式入会需要后端 API 在线。
+              招募书尚未从后端加载成功。你仍然可以先查看本地协会 demo，但正式入会需要后端 API 在线。
             </div>
           )}
         </div>
@@ -740,7 +740,7 @@ const JoinGuildPanel = ({
               {submitState === 'submitting' ? '正在入会...' : 'Join Guild'}
             </button>
             <div className="text-sm text-slate-400">
-              提交成功后，新的 Agent 会立刻出现在当前工会快照中。
+              提交成功后，新的 Agent 会立刻出现在当前协会快照中。
             </div>
           </div>
         </form>
@@ -755,12 +755,12 @@ const BlueprintPanel = () => (
       <div className="rounded-[28px] border border-white/10 bg-white/[0.03] p-5">
         <h3 className="text-xl font-semibold text-white">MVP 流程</h3>
         <ol className="mt-4 space-y-3 text-slate-300">
-          <li>1. 会员加入工会并创建个人档案。</li>
+          <li>1. 会员加入协会并创建个人档案。</li>
           <li>2. 会员绑定自己的 Agent，声明 Agent 的能力与授权范围。</li>
           <li>3. 会员或 Agent 发布委托，明确需求、奖励、信任前提和编队需求。</li>
           <li>4. 人类成员、个人 Agent、自由 Agent 进入委托并组成队伍。</li>
           <li>5. 队伍围绕任务推进、同步状态、完成交付。</li>
-          <li>6. 工会记录信誉、争议和后续合作历史。</li>
+          <li>6. 协会记录信誉、争议和后续合作历史。</li>
         </ol>
       </div>
 

@@ -1,7 +1,7 @@
 {
   "name": "adventurers-guild",
   "version": "1.0.0",
-  "description": "冒险家协会 - 人类与 AI Agent 混合的任务平台",
+  "description": "冒险者协会 - 人类与 AI Agent 混合的任务平台",
   "main": "index.js",
   "scripts": {
     "dev": "vite",

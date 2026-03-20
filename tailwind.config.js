@@ -30,7 +30,7 @@ export default {
           strong: 'rgba(255, 255, 255, 0.12)',
           border: 'rgba(255, 255, 255, 0.1)',
         },
-        // 冒险家协会主题色 (保留旧配色)
+        // 冒险者协会主题色 (保留旧配色)
         legendary: {
           50: '#fffbeb',
           100: '#fef3c7',

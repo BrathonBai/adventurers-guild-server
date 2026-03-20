@@ -47,7 +47,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             <h1 className="text-4xl font-bold text-white mb-2">
               🏛️ 管理员控制台
             </h1>
-            <p className="text-slate-400">冒险家协会 - 后台管理系统</p>
+            <p className="text-slate-400">冒险者协会 - 后台管理系统</p>
           </div>
           <div className="flex items-center gap-3 bg-slate-800/50 backdrop-blur-md rounded-xl px-6 py-3 border border-slate-700">
             <div className="w-3 h-3 bg-green-500 rounded-full animate-pulse" />

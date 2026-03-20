@@ -1,8 +1,8 @@
 @echo off
-REM 冒险家协会 - 一键启动脚本 (Windows)
+REM 冒险者协会 - 一键启动脚本 (Windows)
 REM Adventurer's Guild - One-Click Start Script (Windows)
 
-echo 🌌 冒险家协会 - 启动中...
+echo 🌌 冒险者协会 - 启动中...
 echo Adventurer's Guild - Starting...
 echo.
 
