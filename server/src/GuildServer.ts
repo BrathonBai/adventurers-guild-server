@@ -1,82 +1,61 @@
 import WebSocket, { WebSocketServer } from 'ws';
 import { v4 as uuidv4 } from 'uuid';
+import {
+  AgentConnection,
+  GuildJoinResult,
+  GuildQuest,
+  GuildTask,
+  IncomingMessage,
+  JoinGuildPayload,
+  Party,
+  PartyMember,
+} from './types';
+import { Application, GuildState } from './GuildState';
+import {
+  normalizeRequiredMembers,
+  readMessageData,
+  readNumber,
+  readOptionalString,
+  readString,
+  readStringArray,
+} from './messageUtils';
+import { buildRecruitmentBookPacket } from './recruitmentBook';
+
+type MessageHandler = (ws: WebSocket, message: IncomingMessage) => void;
 
 /**
- * Agent 连接信息
- */
-interface AgentConnection {
-  id: string;
-  ws: WebSocket;
-  name: string;
-  capabilities: any[];
-  registeredAt: number;
-}
-
-/**
- * 队伍信息
- */
-interface Party {
-  id: string;
-  name: string;
-  description?: string;
-  leaderId: string;
-  members: PartyMember[];
-  maxSize: number;
-  status: 'RECRUITING' | 'ACTIVE' | 'DISBANDED';
-  lookingFor: string[];
-  requiredSkills: string[];
-  createdAt: number;
-}
-
-/**
- * 队员信息
- */
-interface PartyMember {
-  userId: string;
-  role: string;
-  skills: string[];
-  status: 'PENDING' | 'ACTIVE' | 'LEFT';
-  joinedAt: number;
-}
-
-/**
- * 任务信息
- */
-interface Task {
-  id: string;
-  partyId: string;
-  title: string;
-  description: string;
-  assigneeId: string;
-  status: 'assigned' | 'in_progress' | 'completed' | 'blocked';
-  progress: number;
-  notes?: string;
-}
-
-/**
- * 冒险家协会 WebSocket 服务器（增强版）
- * 
- * 新增功能：
- * 1. 队伍管理
- * 2. 任务协调
- * 3. 成员招募
+ * Adventurer's Guild runtime:
+ * - member registry
+ * - quest publishing and team formation
+ * - party coordination
+ * - task progress tracking
+ *
+ * The current implementation keeps everything in memory so we can stabilize the
+ * product model before introducing persistence.
  */
 export class GuildServer {
-  private wss: WebSocketServer;
-  private agents: Map<string, AgentConnection> = new Map();
-  private parties: Map<string, Party> = new Map();
-  private tasks: Map<string, Task> = new Map();
-  private applications: Map<string, any[]> = new Map(); // partyId -> applications
-  private port: number;
+  private readonly wss: WebSocketServer;
+  private readonly state: GuildState;
+  private readonly messageHandlers: Record<string, MessageHandler>;
+  private readonly port: number;
+  private readonly bindHost: string;
+  private readonly publicHost: string;
 
-  constructor(port: number = 3001) {
+  constructor(port: number = 3000, bindHost: string = '0.0.0.0', publicHost: string = 'localhost') {
     this.port = port;
-    this.wss = new WebSocketServer({ port });
+    this.bindHost = bindHost;
+    this.publicHost = publicHost;
+    this.wss = new WebSocketServer({ port, host: bindHost });
+    this.state = new GuildState();
+    this.messageHandlers = this.createMessageHandlers();
     this.setupServer();
   }
 
   private setupServer(): void {
     console.log(`🏰 Adventurer's Guild Server started on port ${this.port}`);
+    console.log(`📡 Bound on: ws://${this.bindHost}:${this.port}`);
+    console.log(`📡 Local: ws://localhost:${this.port}`);
+    console.log(`📡 Network: ws://${this.publicHost}:${this.port}`);
 
     this.wss.on('connection', (ws: WebSocket) => {
       console.log('📡 New connection established');
@@ -94,187 +73,522 @@ export class GuildServer {
       });
     });
 
-    // 心跳检测
     setInterval(() => {
       this.heartbeat();
     }, 30000);
   }
 
-  /**
-   * 处理消息
-   */
-  private handleMessage(ws: WebSocket, data: string): void {
-    try {
-      const message = JSON.parse(data);
+  private createMessageHandlers(): Record<string, MessageHandler> {
+    return {
+      register: (ws, message) => this.handleRegister(ws, message),
+      agent_message: (ws, message) => this.handleAgentMessage(ws, message),
+      agent_broadcast: (ws, message) => this.handleAgentBroadcast(ws, message),
+      publish_quest: (ws, message) => this.handlePublishQuest(ws, message),
+      list_quests: (ws, message) => this.handleListQuests(ws, message),
+      accept_quest: (ws, message) => this.handleAcceptQuest(ws, message),
+      invite_to_quest: (ws, message) => this.handleInviteToQuest(ws, message),
+      get_quest_team: (ws, message) => this.handleGetQuestTeam(ws, message),
+      send_to_quest_team: (ws, message) => this.handleSendToQuestTeam(ws, message),
+      post_quest: (ws, message) => this.handlePostQuest(ws, message),
+      find_agents: (ws, message) => this.handleFindAgents(ws, message),
+      create_party: (ws, message) => this.handleCreateParty(ws, message),
+      recruit_members: (ws, message) => this.handleRecruitMembers(ws, message),
+      review_application: (ws, message) => this.handleReviewApplication(ws, message),
+      add_member: (ws, message) => this.handleAddMember(ws, message),
+      remove_member: (ws, message) => this.handleRemoveMember(ws, message),
+      get_party_status: (ws, message) => this.handleGetPartyStatus(ws, message),
+      disband_party: (ws, message) => this.handleDisbandParty(ws, message),
+      list_my_parties: (ws, message) => this.handleListMyParties(ws, message),
+      assign_task: (ws, message) => this.handleAssignTask(ws, message),
+      update_task_status: (ws, message) => this.handleUpdateTaskStatus(ws, message),
+      get_task_progress: (ws, message) => this.handleGetTaskProgress(ws, message),
+      integrate_results: (ws, message) => this.handleIntegrateResults(ws, message),
+      team_message: (ws, message) => this.handleTeamMessage(ws, message),
+      request_help: (ws, message) => this.handleRequestHelp(ws, message),
+      get_guild_snapshot: (ws, message) => this.handleGetGuildSnapshot(ws, message),
+      get_recruitment_book: (ws, message) => this.handleGetRecruitmentBook(ws, message),
+      join_guild: (ws, message) => this.handleJoinGuild(ws, message),
+      pong: (_ws, _message) => undefined,
+    };
+  }
 
-      switch (message.type) {
-        // 原有功能
-        case 'register':
-          this.handleRegister(ws, message);
-          break;
-        case 'agent_message':
-          this.handleAgentMessage(ws, message);
-          break;
-        case 'agent_broadcast':
-          this.handleAgentBroadcast(ws, message);
-          break;
-        
-        // 任务相关
-        case 'post_quest':
-          this.handlePostQuest(ws, message);
-          break;
-        case 'find_agents':
-          this.handleFindAgents(ws, message);
-          break;
-        
-        // 队伍管理
-        case 'create_party':
-          this.handleCreateParty(ws, message);
-          break;
-        case 'recruit_members':
-          this.handleRecruitMembers(ws, message);
-          break;
-        case 'review_application':
-          this.handleReviewApplication(ws, message);
-          break;
-        case 'add_member':
-          this.handleAddMember(ws, message);
-          break;
-        case 'remove_member':
-          this.handleRemoveMember(ws, message);
-          break;
-        case 'get_party_status':
-          this.handleGetPartyStatus(ws, message);
-          break;
-        case 'disband_party':
-          this.handleDisbandParty(ws, message);
-          break;
-        case 'list_my_parties':
-          this.handleListMyParties(ws, message);
-          break;
-        
-        // 任务协调
-        case 'assign_task':
-          this.handleAssignTask(ws, message);
-          break;
-        case 'update_task_status':
-          this.handleUpdateTaskStatus(ws, message);
-          break;
-        case 'get_task_progress':
-          this.handleGetTaskProgress(ws, message);
-          break;
-        case 'integrate_results':
-          this.handleIntegrateResults(ws, message);
-          break;
-        case 'team_message':
-          this.handleTeamMessage(ws, message);
-          break;
-        case 'request_help':
-          this.handleRequestHelp(ws, message);
-          break;
-        
-        case 'pong':
-          break;
-        default:
-          console.warn('Unknown message type:', message.type);
+  private handleMessage(ws: WebSocket, payload: string): void {
+    try {
+      const message = JSON.parse(payload) as IncomingMessage;
+      const handler = this.messageHandlers[message.type];
+
+      if (!handler) {
+        console.warn('Unknown message type:', message.type);
+        this.sendError(ws, 'UNKNOWN_MESSAGE', `Unknown message type: ${message.type}`);
+        return;
       }
+
+      handler(ws, message);
     } catch (error) {
       console.error('Failed to handle message:', error);
       this.sendError(ws, 'INVALID_MESSAGE', 'Failed to parse message');
     }
   }
 
-  /**
-   * 注册 Agent
-   */
-  private handleRegister(ws: WebSocket, message: any): void {
-    const agentId = message.agentId || uuidv4();
-    
+  private handleRegister(ws: WebSocket, message: IncomingMessage): void {
+    const agentId = readString(message.agentId) || uuidv4();
     const agent: AgentConnection = {
       id: agentId,
       ws,
-      name: message.name || 'Anonymous',
-      capabilities: message.capabilities || [],
+      name: readString(message.name) || 'Anonymous',
+      capabilities: readStringArray(message.capabilities),
       registeredAt: Date.now(),
     };
 
-    this.agents.set(agentId, agent);
+    this.state.liveAgents.set(agentId, agent);
+    this.state.upsertAgentProfile(agentId, message, agent);
 
     console.log(`✅ Agent registered: ${agent.name} (${agentId})`);
+    console.log(`   Capabilities: ${agent.capabilities.join(', ') || 'none'}`);
 
     this.sendToWs(ws, {
       type: 'registered',
       agentId,
-      message: 'Successfully registered to Adventurer\'s Guild',
+      message: "Successfully registered to Adventurer's Guild",
+      capabilities: agent.capabilities,
+    });
+
+    this.broadcast(
+      {
+        type: 'new_member',
+        data: {
+          agentId,
+          name: agent.name,
+          capabilities: agent.capabilities,
+        },
+      },
+      agentId,
+    );
+  }
+
+  private handlePublishQuest(ws: WebSocket, message: IncomingMessage): void {
+    const agent = this.requireAgent(ws);
+    if (!agent) {
+      return;
+    }
+
+    const questData = readMessageData(message);
+    const questId = this.state.nextQuestId();
+    const requiredMembers = normalizeRequiredMembers(questData.requiredMembers);
+    const agentProfile = this.state.agentProfiles.get(agent.id);
+    const quest: GuildQuest = {
+      id: questId,
+      title: readString(questData.title) || 'Untitled quest',
+      description: readString(questData.description) || '',
+      publisherId: agent.id,
+      publisherMemberId: agentProfile?.ownerMemberId,
+      publisherAgentId: agent.id,
+      deadline: readOptionalString(questData.deadline),
+      reward: readOptionalString(questData.reward),
+      tags: readStringArray(questData.tags),
+      trustRequirements: readStringArray(questData.trustRequirements),
+      requiredMembers,
+      subtasks: Array.isArray(questData.subtasks) ? questData.subtasks : [],
+      status: requiredMembers.length > 0 ? 'FORMING_PARTY' : 'OPEN',
+      teamMembers: [agent.id],
+      createdAt: Date.now(),
+    };
+
+    this.state.quests.set(questId, quest);
+
+    console.log(`📝 Quest published: ${quest.title} (${questId})`);
+
+    this.sendToWs(ws, {
+      type: 'quest_published',
+      questId,
+      quest,
+    });
+
+    this.broadcast(
+      {
+        type: 'new_quest',
+        data: {
+          questId,
+          title: quest.title,
+          requiredMembers: quest.requiredMembers,
+          publisherName: agent.name,
+        },
+      },
+      agent.id,
+    );
+  }
+
+  private handleListQuests(ws: WebSocket, message: IncomingMessage): void {
+    if (!this.requireAgent(ws)) {
+      return;
+    }
+
+    const filter = readOptionalString(message.data?.status);
+    const quests = Array.from(this.state.quests.values())
+      .filter((quest) => !filter || quest.status === filter)
+      .map((quest) => ({
+        id: quest.id,
+        title: quest.title,
+        description: quest.description,
+        requiredMembers: quest.requiredMembers,
+        status: quest.status,
+        deadline: quest.deadline,
+        reward: quest.reward,
+      }));
+
+    this.sendToWs(ws, {
+      type: 'quest_list',
+      quests,
     });
   }
 
-  /**
-   * 发布任务
-   */
-  private handlePostQuest(ws: WebSocket, message: any): void {
-    const agent = this.getAgentByWs(ws);
-    if (!agent) return;
+  private handleAcceptQuest(ws: WebSocket, message: IncomingMessage): void {
+    const agent = this.requireAgent(ws);
+    if (!agent) {
+      return;
+    }
 
+    const questId = readString(message.data?.questId);
+    const role = readString(message.data?.role);
+    const quest = questId ? this.state.quests.get(questId) : undefined;
+
+    if (!quest) {
+      this.sendError(ws, 'QUEST_NOT_FOUND', 'Quest not found');
+      return;
+    }
+
+    if (quest.status !== 'OPEN' && quest.status !== 'FORMING_PARTY') {
+      this.sendError(ws, 'QUEST_NOT_OPEN', 'Quest is not open for acceptance');
+      return;
+    }
+
+    if (quest.teamMembers.includes(agent.id)) {
+      this.sendError(ws, 'ALREADY_IN_TEAM', 'You are already in this quest team');
+      return;
+    }
+
+    const requiredMember = quest.requiredMembers.find((member) => member.role === role);
+    if (!requiredMember) {
+      this.sendError(ws, 'ROLE_NOT_FOUND', 'Role not found in quest requirements');
+      return;
+    }
+
+    if (requiredMember.filled >= requiredMember.count) {
+      this.sendError(ws, 'ROLE_FILLED', 'This role is already filled');
+      return;
+    }
+
+    quest.teamMembers.push(agent.id);
+    requiredMember.filled += 1;
+    if (quest.status === 'OPEN') {
+      quest.status = 'FORMING_PARTY';
+    }
+
+    if (quest.requiredMembers.every((member) => member.filled >= member.count)) {
+      quest.status = 'IN_PROGRESS';
+    }
+
+    console.log(`✅ ${agent.name} accepted quest ${quest.id} as ${role}`);
+
+    this.sendToWs(ws, {
+      type: 'quest_accepted',
+      questId: quest.id,
+      role,
+      teamMembers: quest.teamMembers,
+    });
+
+    quest.teamMembers.forEach((memberId) => {
+      if (memberId !== agent.id) {
+        this.sendToAgent(memberId, {
+          type: 'team_member_joined',
+          questId: quest.id,
+          data: {
+            agentId: agent.id,
+            name: agent.name,
+            role,
+          },
+        });
+      }
+    });
+  }
+
+  private handleInviteToQuest(ws: WebSocket, message: IncomingMessage): void {
+    const agent = this.requireAgent(ws);
+    if (!agent) {
+      return;
+    }
+
+    const questId = readString(message.data?.questId);
+    const targetAgentId = readString(message.data?.targetAgentId);
+    const role = readString(message.data?.role);
+    const quest = questId ? this.state.quests.get(questId) : undefined;
+
+    if (!quest) {
+      this.sendError(ws, 'QUEST_NOT_FOUND', 'Quest not found');
+      return;
+    }
+
+    if (!quest.teamMembers.includes(agent.id)) {
+      this.sendError(ws, 'NOT_IN_TEAM', 'You are not in this quest team');
+      return;
+    }
+
+    const targetAgent = targetAgentId ? this.state.liveAgents.get(targetAgentId) : undefined;
+    if (!targetAgent) {
+      this.sendError(ws, 'AGENT_NOT_FOUND', 'Target agent not found');
+      return;
+    }
+
+    console.log(`📨 ${agent.name} invited ${targetAgent.name} to ${quest.id} as ${role}`);
+
+    this.sendToAgent(targetAgent.id, {
+      type: 'quest_invitation',
+      data: {
+        questId: quest.id,
+        questTitle: quest.title,
+        role,
+        inviterName: agent.name,
+        inviterId: agent.id,
+      },
+    });
+
+    this.sendToWs(ws, {
+      type: 'invitation_sent',
+      targetAgentId: targetAgent.id,
+      targetAgentName: targetAgent.name,
+    });
+  }
+
+  private handleGetQuestTeam(ws: WebSocket, message: IncomingMessage): void {
+    if (!this.requireAgent(ws)) {
+      return;
+    }
+
+    const questId = readString(message.data?.questId);
+    const quest = questId ? this.state.quests.get(questId) : undefined;
+
+    if (!quest) {
+      this.sendError(ws, 'QUEST_NOT_FOUND', 'Quest not found');
+      return;
+    }
+
+    const teamMembers = quest.teamMembers
+      .map((memberId) => {
+        const liveAgent = this.state.liveAgents.get(memberId);
+        if (liveAgent) {
+          return {
+            id: liveAgent.id,
+            name: liveAgent.name,
+            capabilities: liveAgent.capabilities,
+          };
+        }
+
+        const agentProfile = this.state.agentProfiles.get(memberId);
+        if (agentProfile) {
+          return {
+            id: agentProfile.id,
+            name: agentProfile.displayName,
+            capabilities: agentProfile.capabilities,
+          };
+        }
+
+        const memberProfile = this.state.members.get(memberId);
+        if (memberProfile) {
+          return {
+            id: memberProfile.id,
+            name: memberProfile.displayName,
+            capabilities: memberProfile.specialties,
+          };
+        }
+
+        return null;
+      })
+      .filter(
+        (
+          member,
+        ): member is {
+          id: string;
+          name: string;
+          capabilities: string[];
+        } => Boolean(member),
+      )
+      ;
+
+    this.sendToWs(ws, {
+      type: 'quest_team',
+      questId: quest.id,
+      teamMembers,
+      requiredMembers: quest.requiredMembers,
+    });
+  }
+
+  private handleSendToQuestTeam(ws: WebSocket, message: IncomingMessage): void {
+    const agent = this.requireAgent(ws);
+    if (!agent) {
+      return;
+    }
+
+    const questId = readString(message.data?.questId);
+    const content = readString(message.data?.content);
+    const quest = questId ? this.state.quests.get(questId) : undefined;
+
+    if (!quest) {
+      this.sendError(ws, 'QUEST_NOT_FOUND', 'Quest not found');
+      return;
+    }
+
+    if (!quest.teamMembers.includes(agent.id)) {
+      this.sendError(ws, 'NOT_IN_TEAM', 'You are not in this quest team');
+      return;
+    }
+
+    console.log(`💬 [${quest.id}] ${agent.name}: ${content}`);
+
+    quest.teamMembers.forEach((memberId) => {
+      this.sendToAgent(memberId, {
+        type: 'quest_team_message',
+        questId: quest.id,
+        data: {
+          sender: agent.name,
+          senderId: agent.id,
+          content,
+          timestamp: Date.now(),
+        },
+      });
+    });
+  }
+
+  private handlePostQuest(ws: WebSocket, message: IncomingMessage): void {
+    const agent = this.requireAgent(ws);
+    if (!agent) {
+      return;
+    }
+
+    const title = readString(message.data?.title) || 'Untitled quest';
     const questId = uuidv4();
-    console.log(`📝 Quest posted: ${message.data.title} (${questId})`);
+
+    console.log(`📝 Legacy quest posted: ${title} (${questId})`);
 
     this.sendToWs(ws, {
       type: 'quest_posted',
       questId,
-      status: 'PENDING_REVIEW'
+      status: 'PENDING_REVIEW',
+      publisherId: agent.id,
     });
   }
 
-  /**
-   * 搜索 Agent
-   */
-  private handleFindAgents(ws: WebSocket, message: any): void {
-    const criteria = message.data;
-    const matchedAgents = Array.from(this.agents.values())
-      .filter(agent => {
-        if (criteria.skill) {
-          return agent.capabilities.some((cap: any) => 
-            cap.toLowerCase().includes(criteria.skill.toLowerCase())
-          );
+  private handleFindAgents(ws: WebSocket, message: IncomingMessage): void {
+    const skill = readOptionalString(message.data?.skill)?.toLowerCase();
+    const agents = Array.from(this.state.agentProfiles.values())
+      .filter((agent) => {
+        if (!skill) {
+          return true;
         }
-        return true;
+
+        return agent.capabilities.some((capability) => capability.toLowerCase().includes(skill));
       })
-      .map(agent => ({
+      .map((agent) => ({
         id: agent.id,
-        name: agent.name,
+        name: agent.displayName,
         capabilities: agent.capabilities,
-        reputation: 'REGULAR' // TODO: 从数据库获取
+        reputation: agent.reputation.tier,
+        classification: agent.classification,
+        availability: agent.availability,
       }));
 
     this.sendToWs(ws, {
       type: 'agents_found',
-      agents: matchedAgents
+      agents,
     });
   }
 
-  /**
-   * 创建队伍
-   */
-  private handleCreateParty(ws: WebSocket, message: any): void {
-    const agent = this.getAgentByWs(ws);
-    if (!agent) return;
+  private handleGetGuildSnapshot(ws: WebSocket, _message: IncomingMessage): void {
+    this.sendToWs(ws, {
+      type: 'guild_snapshot',
+      snapshot: this.state.createSnapshot(),
+    });
+  }
 
+  private handleGetRecruitmentBook(ws: WebSocket, _message: IncomingMessage): void {
+    this.sendToWs(ws, {
+      type: 'recruitment_book',
+      packet: this.getRecruitmentBookPacket(),
+    });
+  }
+
+  private handleJoinGuild(ws: WebSocket, message: IncomingMessage): void {
+    const payload = this.extractJoinPayload(message);
+    if (!payload) {
+      this.sendError(ws, 'INVALID_JOIN_PAYLOAD', 'join_guild requires an agent profile with displayName and capabilities');
+      return;
+    }
+
+    const liveAgentId = payload.agent.id || uuidv4();
+    const liveAgent: AgentConnection = {
+      id: liveAgentId,
+      ws,
+      name: payload.agent.displayName,
+      capabilities: payload.agent.capabilities,
+      registeredAt: Date.now(),
+    };
+
+    this.state.liveAgents.set(liveAgentId, liveAgent);
+    const result = this.state.joinGuild(
+      {
+        ...payload,
+        agent: {
+          ...payload.agent,
+          id: liveAgentId,
+        },
+      },
+      { liveAgent },
+    );
+
+    this.sendToWs(ws, {
+      type: 'guild_joined',
+      agentId: result.agent.id,
+      memberId: result.member?.id,
+      delegationId: result.delegation?.id,
+      result,
+    });
+
+    this.broadcast(
+      {
+        type: 'new_member',
+        data: {
+          agentId: result.agent.id,
+          name: result.agent.displayName,
+          capabilities: result.agent.capabilities,
+          ownerMemberId: result.member?.id,
+        },
+      },
+      result.agent.id,
+    );
+  }
+
+  private handleCreateParty(ws: WebSocket, message: IncomingMessage): void {
+    const agent = this.requireAgent(ws);
+    if (!agent) {
+      return;
+    }
+
+    const partyData = readMessageData(message);
     const partyId = uuidv4();
     const party: Party = {
       id: partyId,
-      name: message.data.name,
-      description: message.data.description,
+      name: readString(partyData.name) || 'Untitled party',
+      description: readOptionalString(partyData.description),
       leaderId: agent.id,
       members: [],
-      maxSize: message.data.maxSize || 5,
+      maxSize: readNumber(partyData.maxSize) ?? 5,
       status: 'RECRUITING',
-      lookingFor: message.data.lookingFor || [],
-      requiredSkills: message.data.requiredSkills || [],
-      createdAt: Date.now()
+      lookingFor: readStringArray(partyData.lookingFor),
+      requiredSkills: readStringArray(partyData.requiredSkills),
+      createdAt: Date.now(),
     };
 
-    this.parties.set(partyId, party);
+    this.state.parties.set(partyId, party);
+
     console.log(`🎉 Party created: ${party.name} (${partyId})`);
 
     this.sendToWs(ws, {
@@ -283,134 +597,154 @@ export class GuildServer {
         id: party.id,
         name: party.name,
         leaderId: party.leaderId,
-        status: party.status
-      }
+        status: party.status,
+      },
     });
   }
 
-  /**
-   * 招募成员
-   */
-  private handleRecruitMembers(ws: WebSocket, message: any): void {
-    const party = this.parties.get(message.partyId);
+  private handleRecruitMembers(ws: WebSocket, message: IncomingMessage): void {
+    const partyId = readString(message.partyId) || readString(message.data?.partyId);
+    const party = partyId ? this.state.parties.get(partyId) : undefined;
+
     if (!party) {
       this.sendError(ws, 'PARTY_NOT_FOUND', 'Party not found');
       return;
     }
 
-    // 模拟收到申请
-    const mockApplications = [
+    const mockApplications: Application[] = [
       {
-        applicantId: 'agent-' + Math.random().toString(36).substr(2, 9),
+        applicantId: `agent-${Math.random().toString(36).slice(2, 11)}`,
         name: 'CodeWizard',
         skills: ['react', 'typescript'],
-        reputation: 'ELITE'
+        reputation: 'ELITE',
       },
       {
-        applicantId: 'agent-' + Math.random().toString(36).substr(2, 9),
+        applicantId: `agent-${Math.random().toString(36).slice(2, 11)}`,
         name: 'BackendMaster',
         skills: ['nodejs', 'postgresql'],
-        reputation: 'REGULAR'
-      }
+        reputation: 'REGULAR',
+      },
     ];
 
-    this.applications.set(message.partyId, mockApplications);
-
+    this.state.applications.set(party.id, mockApplications);
     console.log(`📢 Recruiting for party ${party.name}`);
 
     this.sendToWs(ws, {
-      type: 'applications_received',
-      partyId: message.partyId,
-      applications: mockApplications
+      type: 'recruitment_started',
+      partyId: party.id,
+      applications: mockApplications,
     });
   }
 
-  /**
-   * 审核申请
-   */
-  private handleReviewApplication(ws: WebSocket, message: any): void {
-    const party = this.parties.get(message.partyId);
-    if (!party) return;
+  private handleReviewApplication(ws: WebSocket, message: IncomingMessage): void {
+    const partyId = readString(message.partyId) || readString(message.data?.partyId);
+    const applicationId =
+      readString(message.applicationId) || readString(message.data?.applicationId);
+    const approved =
+      typeof message.approved === 'boolean'
+        ? message.approved
+        : typeof message.data?.approved === 'boolean'
+          ? message.data.approved
+          : false;
 
-    if (message.approved) {
-      const member: PartyMember = {
-        userId: message.applicantId,
-        role: message.role,
-        skills: [],
-        status: 'ACTIVE',
-        joinedAt: Date.now()
-      };
-      party.members.push(member);
-      console.log(`✅ ${message.applicantId} joined ${party.name} as ${message.role}`);
+    const applications = partyId ? this.state.applications.get(partyId) : undefined;
+    if (!applications) {
+      this.sendError(ws, 'APPLICATIONS_NOT_FOUND', 'Applications not found');
+      return;
     }
+
+    const application = applications.find((entry) => entry.applicantId === applicationId);
+    if (!application) {
+      this.sendError(ws, 'APPLICATION_NOT_FOUND', 'Application not found');
+      return;
+    }
+
+    console.log(`${approved ? '✅' : '❌'} Application reviewed: ${application.name}`);
 
     this.sendToWs(ws, {
       type: 'application_reviewed',
-      partyId: message.partyId,
-      applicantId: message.applicantId,
-      approved: message.approved
+      partyId,
+      applicationId,
+      approved,
+      applicantName: application.name,
     });
   }
 
-  /**
-   * 添加成员
-   */
-  private handleAddMember(ws: WebSocket, message: any): void {
-    const party = this.parties.get(message.partyId);
-    if (!party) return;
+  private handleAddMember(ws: WebSocket, message: IncomingMessage): void {
+    const partyId = readString(message.partyId) || readString(message.data?.partyId);
+    const party = partyId ? this.state.parties.get(partyId) : undefined;
 
-    const member: PartyMember = {
-      userId: message.userId,
-      role: message.role,
-      skills: message.skills || [],
-      status: 'ACTIVE',
-      joinedAt: Date.now()
-    };
-
-    party.members.push(member);
-    console.log(`➕ ${message.userId} added to ${party.name}`);
-
-    this.sendToWs(ws, {
-      type: 'member_added',
-      partyId: message.partyId,
-      member
-    });
-  }
-
-  /**
-   * 移除成员
-   */
-  private handleRemoveMember(ws: WebSocket, message: any): void {
-    const party = this.parties.get(message.partyId);
-    if (!party) return;
-
-    party.members = party.members.filter(m => m.userId !== message.userId);
-    console.log(`➖ ${message.userId} removed from ${party.name}`);
-
-    this.sendToWs(ws, {
-      type: 'member_removed',
-      partyId: message.partyId,
-      userId: message.userId
-    });
-  }
-
-  /**
-   * 获取队伍状态
-   */
-  private handleGetPartyStatus(ws: WebSocket, message: any): void {
-    const party = this.parties.get(message.partyId);
     if (!party) {
       this.sendError(ws, 'PARTY_NOT_FOUND', 'Party not found');
       return;
     }
 
-    const leader = this.agents.get(party.leaderId);
-    const membersWithDetails = party.members.map(m => ({
-      ...m,
+    const userId = readString(message.userId) || readString(message.data?.userId);
+    if (!userId) {
+      this.sendError(ws, 'USER_ID_REQUIRED', 'User id is required');
+      return;
+    }
+
+    const member: PartyMember = {
+      userId,
+      role: readString(message.role) || readString(message.data?.role) || 'member',
+      skills: readStringArray(message.skills ?? message.data?.skills),
+      status: 'ACTIVE',
+      joinedAt: Date.now(),
+    };
+
+    party.members.push(member);
+
+    console.log(`➕ ${userId} joined ${party.name}`);
+
+    this.sendToWs(ws, {
+      type: 'member_added',
+      partyId: party.id,
+      member,
+    });
+  }
+
+  private handleRemoveMember(ws: WebSocket, message: IncomingMessage): void {
+    const partyId = readString(message.partyId) || readString(message.data?.partyId);
+    const userId = readString(message.userId) || readString(message.data?.userId);
+    const party = partyId ? this.state.parties.get(partyId) : undefined;
+
+    if (!party) {
+      this.sendError(ws, 'PARTY_NOT_FOUND', 'Party not found');
+      return;
+    }
+
+    party.members = party.members.filter((member) => member.userId !== userId);
+
+    console.log(`➖ ${userId} removed from ${party.name}`);
+
+    this.sendToWs(ws, {
+      type: 'member_removed',
+      partyId: party.id,
+      userId,
+    });
+  }
+
+  private handleGetPartyStatus(ws: WebSocket, message: IncomingMessage): void {
+    const partyId = readString(message.partyId) || readString(message.data?.partyId);
+    const party = partyId ? this.state.parties.get(partyId) : undefined;
+
+    if (!party) {
+      this.sendError(ws, 'PARTY_NOT_FOUND', 'Party not found');
+      return;
+    }
+
+    const leaderAgent = this.state.agentProfiles.get(party.leaderId);
+    const leaderMember = this.state.members.get(party.leaderId);
+    const members = party.members.map((member) => ({
+      ...member,
       user: {
-        id: m.userId,
-        name: this.agents.get(m.userId)?.name || 'Unknown'
-      }
+        id: member.userId,
+        name:
+          this.state.agentProfiles.get(member.userId)?.displayName ||
+          this.state.members.get(member.userId)?.displayName ||
+          'Unknown',
+      },
     }));
 
     this.sendToWs(ws, {
@@ -419,314 +753,336 @@ export class GuildServer {
         ...party,
         leader: {
           id: party.leaderId,
-          name: leader?.name || 'Unknown'
+          name: leaderAgent?.displayName || leaderMember?.displayName || 'Unknown',
         },
-        members: membersWithDetails
-      }
+        members,
+      },
     });
   }
 
-  /**
-   * 解散队伍
-   */
-  private handleDisbandParty(ws: WebSocket, message: any): void {
-    const party = this.parties.get(message.partyId);
-    if (!party) return;
+  private handleDisbandParty(ws: WebSocket, message: IncomingMessage): void {
+    const partyId = readString(message.partyId) || readString(message.data?.partyId);
+    const party = partyId ? this.state.parties.get(partyId) : undefined;
+
+    if (!party) {
+      this.sendError(ws, 'PARTY_NOT_FOUND', 'Party not found');
+      return;
+    }
 
     party.status = 'DISBANDED';
     console.log(`💔 Party disbanded: ${party.name}`);
 
     this.sendToWs(ws, {
       type: 'party_disbanded',
-      partyId: message.partyId
+      partyId: party.id,
     });
   }
 
-  /**
-   * 列出我的队伍
-   */
-  private handleListMyParties(ws: WebSocket, message: any): void {
-    const agent = this.getAgentByWs(ws);
-    if (!agent) return;
+  private handleListMyParties(ws: WebSocket, _message: IncomingMessage): void {
+    const agent = this.requireAgent(ws);
+    if (!agent) {
+      return;
+    }
 
-    const myParties = Array.from(this.parties.values())
-      .filter(p => p.leaderId === agent.id || p.members.some(m => m.userId === agent.id))
-      .map(p => ({
-        id: p.id,
-        name: p.name,
-        status: p.status,
-        members: p.members.length,
-        maxSize: p.maxSize,
-        lookingFor: p.lookingFor
+    const parties = Array.from(this.state.parties.values())
+      .filter(
+        (party) =>
+          party.leaderId === agent.id || party.members.some((member) => member.userId === agent.id),
+      )
+      .map((party) => ({
+        id: party.id,
+        name: party.name,
+        status: party.status,
+        members: party.members.length,
+        maxSize: party.maxSize,
+        lookingFor: party.lookingFor,
       }));
 
     this.sendToWs(ws, {
       type: 'my_parties',
-      parties: myParties
+      parties,
     });
   }
 
-  /**
-   * 分配任务
-   */
-  private handleAssignTask(ws: WebSocket, message: any): void {
+  private handleAssignTask(ws: WebSocket, message: IncomingMessage): void {
+    const taskData = message.task ?? message.data?.task ?? {};
+    const assigneeId =
+      readString(message.assigneeId) || readString(message.data?.assigneeId) || '';
     const taskId = uuidv4();
-    const task: Task = {
+    const task: GuildTask = {
       id: taskId,
-      partyId: message.partyId,
-      title: message.task.title,
-      description: message.task.description,
-      assigneeId: message.assigneeId,
+      questId: readString(message.questId) || readString(message.data?.questId) || '',
+      partyId: readString(message.partyId) || readString(message.data?.partyId) || '',
+      title: readString(taskData.title) || 'Untitled task',
+      description: readString(taskData.description) || '',
+      assigneeId,
       status: 'assigned',
-      progress: 0
+      progress: 0,
     };
 
-    this.tasks.set(taskId, task);
-    console.log(`📋 Task assigned: ${task.title} -> ${message.assigneeId}`);
+    this.state.tasks.set(taskId, task);
+
+    console.log(`📋 Task assigned: ${task.title} -> ${assigneeId}`);
 
     this.sendToWs(ws, {
       type: 'task_assigned',
       taskId,
-      assigneeId: message.assigneeId,
-      status: 'assigned'
+      assigneeId,
+      status: task.status,
     });
   }
 
-  /**
-   * 更新任务状态
-   */
-  private handleUpdateTaskStatus(ws: WebSocket, message: any): void {
-    const task = this.tasks.get(message.taskId);
-    if (!task) return;
+  private handleUpdateTaskStatus(ws: WebSocket, message: IncomingMessage): void {
+    const taskId = readString(message.taskId) || readString(message.data?.taskId);
+    const task = taskId ? this.state.tasks.get(taskId) : undefined;
 
-    task.status = message.status;
-    task.progress = message.progress;
-    task.notes = message.notes;
+    if (!task) {
+      this.sendError(ws, 'TASK_NOT_FOUND', 'Task not found');
+      return;
+    }
 
-    console.log(`📝 Task updated: ${task.title} -> ${message.status} (${message.progress}%)`);
+    task.status = (readString(message.status) ||
+      readString(message.data?.status) ||
+      task.status) as GuildTask['status'];
+    task.progress = readNumber(message.progress) ?? readNumber(message.data?.progress) ?? 0;
+    task.notes = readOptionalString(message.notes) ?? readOptionalString(message.data?.notes);
+
+    console.log(`📝 Task updated: ${task.title} -> ${task.status} (${task.progress}%)`);
 
     this.sendToWs(ws, {
       type: 'task_updated',
-      taskId: message.taskId,
-      status: message.status,
-      progress: message.progress
+      taskId: task.id,
+      status: task.status,
+      progress: task.progress,
     });
   }
 
-  /**
-   * 获取任务进度
-   */
-  private handleGetTaskProgress(ws: WebSocket, message: any): void {
-    const partyTasks = Array.from(this.tasks.values())
-      .filter(t => t.partyId === message.partyId)
-      .map(t => ({
-        ...t,
+  private handleGetTaskProgress(ws: WebSocket, message: IncomingMessage): void {
+    const partyId = readString(message.partyId) || readString(message.data?.partyId);
+    const tasks = Array.from(this.state.tasks.values())
+      .filter((task) => task.partyId === partyId)
+      .map((task) => ({
+        ...task,
         assignee: {
-          id: t.assigneeId,
-          name: this.agents.get(t.assigneeId)?.name || 'Unknown'
-        }
+          id: task.assigneeId,
+          name:
+            this.state.agentProfiles.get(task.assigneeId)?.displayName ||
+            this.state.members.get(task.assigneeId)?.displayName ||
+            'Unknown',
+        },
       }));
 
     this.sendToWs(ws, {
       type: 'task_progress',
-      partyId: message.partyId,
-      tasks: partyTasks
+      partyId,
+      tasks,
     });
   }
 
-  /**
-   * 整合结果
-   */
-  private handleIntegrateResults(ws: WebSocket, message: any): void {
-    const partyTasks = Array.from(this.tasks.values())
-      .filter(t => t.partyId === message.partyId && t.status === 'completed');
+  private handleIntegrateResults(ws: WebSocket, message: IncomingMessage): void {
+    const partyId = readString(message.partyId) || readString(message.data?.partyId);
+    const deliverables = Array.from(this.state.tasks.values())
+      .filter((task) => task.partyId === partyId && task.status === 'completed')
+      .map((task) => ({
+        name: task.title,
+        path: `/deliverables/${task.id}`,
+        contributor: task.assigneeId,
+      }));
 
-    const deliverables = partyTasks.map(t => ({
-      name: t.title,
-      path: `/deliverables/${t.id}`,
-      contributor: t.assigneeId
-    }));
-
-    console.log(`🔗 Results integrated for party ${message.partyId}`);
+    console.log(`🔗 Results integrated for party ${partyId}`);
 
     this.sendToWs(ws, {
       type: 'results_integrated',
-      partyId: message.partyId,
-      deliverables
+      partyId,
+      deliverables,
     });
   }
 
-  /**
-   * 团队消息
-   */
-  private handleTeamMessage(ws: WebSocket, message: any): void {
-    const party = this.parties.get(message.partyId);
-    if (!party) return;
+  private handleTeamMessage(ws: WebSocket, message: IncomingMessage): void {
+    const partyId = readString(message.partyId) || readString(message.data?.partyId);
+    const party = partyId ? this.state.parties.get(partyId) : undefined;
+
+    if (!party) {
+      this.sendError(ws, 'PARTY_NOT_FOUND', 'Party not found');
+      return;
+    }
 
     const agent = this.getAgentByWs(ws);
-    console.log(`💬 Team message in ${party.name}: ${message.message}`);
+    const content = readString(message.message) || readString(message.data?.message);
+    console.log(`💬 Team message in ${party.name}: ${content}`);
 
-    // 发送给所有队员
-    party.members.forEach(member => {
-      const memberAgent = this.agents.get(member.userId);
-      if (memberAgent) {
-        this.sendToAgent(member.userId, {
-          type: 'team_message',
-          from: agent?.id,
-          partyId: message.partyId,
-          message: message.message
-        });
-      }
+    party.members.forEach((member) => {
+      this.sendToAgent(member.userId, {
+        type: 'team_message',
+        from: agent?.id,
+        partyId: party.id,
+        message: content,
+      });
     });
   }
 
-  /**
-   * 请求帮助
-   */
-  private handleRequestHelp(ws: WebSocket, message: any): void {
-    console.log(`🆘 Help requested: ${message.issue}`);
+  private handleRequestHelp(ws: WebSocket, message: IncomingMessage): void {
+    const partyId = readString(message.partyId) || readString(message.data?.partyId);
+    const taskId = readString(message.taskId) || readString(message.data?.taskId);
+    const issue = readString(message.issue) || readString(message.data?.issue);
 
-    // 模拟有人提供帮助
+    console.log(`🆘 Help requested: ${issue}`);
+
     setTimeout(() => {
       this.sendToWs(ws, {
         type: 'help_offered',
-        partyId: message.partyId,
-        taskId: message.taskId,
+        partyId,
+        taskId,
         helper: {
           id: 'helper-123',
-          name: 'HelpfulAgent'
+          name: 'HelpfulAgent',
         },
-        solution: 'Try checking the documentation'
+        solution: 'Try breaking the work into smaller tasks and reassigning the blocked slice.',
       });
     }, 1000);
   }
 
-  /**
-   * 处理 Agent 间消息
-   */
-  private handleAgentMessage(ws: WebSocket, message: any): void {
-    const fromAgent = this.getAgentByWs(ws);
-    if (!fromAgent) return;
-
-    const toAgent = this.agents.get(message.to);
-    if (!toAgent) {
-      console.warn(`Target agent ${message.to} not found`);
+  private handleAgentMessage(ws: WebSocket, message: IncomingMessage): void {
+    const fromAgent = this.requireAgent(ws);
+    if (!fromAgent) {
       return;
     }
 
-    console.log(`📨 Message: ${fromAgent.name} → ${toAgent.name}`);
+    const targetAgentId = readString(message.to);
+    const targetAgent = targetAgentId ? this.state.liveAgents.get(targetAgentId) : undefined;
+    if (!targetAgent) {
+      this.sendError(ws, 'AGENT_NOT_FOUND', 'Target agent not found');
+      return;
+    }
 
-    this.sendToAgent(message.to, {
+    console.log(`📨 Message: ${fromAgent.name} → ${targetAgent.name}`);
+
+    this.sendToAgent(targetAgent.id, {
       type: 'agent_message',
       from: fromAgent.id,
-      content: message.content
+      content: message.content,
     });
   }
 
-  /**
-   * 处理广播消息
-   */
-  private handleAgentBroadcast(ws: WebSocket, message: any): void {
-    const fromAgent = this.getAgentByWs(ws);
-    if (!fromAgent) return;
+  private handleAgentBroadcast(ws: WebSocket, message: IncomingMessage): void {
+    const fromAgent = this.requireAgent(ws);
+    if (!fromAgent) {
+      return;
+    }
 
     console.log(`📢 Broadcast from ${fromAgent.name}`);
 
-    this.broadcast({
-      type: 'agent_broadcast',
-      from: fromAgent.id,
-      data: message.data
-    }, fromAgent.id);
+    this.broadcast(
+      {
+        type: 'agent_broadcast',
+        from: fromAgent.id,
+        data: message.data,
+      },
+      fromAgent.id,
+    );
   }
 
-  /**
-   * 发送错误消息
-   */
+  private requireAgent(ws: WebSocket): AgentConnection | undefined {
+    const agent = this.getAgentByWs(ws);
+    if (!agent) {
+      this.sendError(ws, 'NOT_REGISTERED', 'Please register first');
+    }
+    return agent;
+  }
+
+  private extractJoinPayload(message: IncomingMessage): JoinGuildPayload | undefined {
+    const payload = (message.data ?? message) as Partial<JoinGuildPayload>;
+    if (!payload.agent?.displayName || !Array.isArray(payload.agent.capabilities)) {
+      return undefined;
+    }
+
+    return {
+      member: payload.member,
+      agent: payload.agent,
+      delegation: payload.delegation,
+    };
+  }
+
   private sendError(ws: WebSocket, code: string, message: string): void {
     this.sendToWs(ws, {
       type: 'error',
       code,
-      message
+      message,
     });
   }
 
-  /**
-   * 发送消息到 WebSocket
-   */
-  private sendToWs(ws: WebSocket, message: any): void {
+  private sendToWs(ws: WebSocket, message: Record<string, unknown>): void {
     if (ws.readyState === WebSocket.OPEN) {
       ws.send(JSON.stringify(message));
     }
   }
 
-  /**
-   * 发送消息给指定 Agent
-   */
-  private sendToAgent(agentId: string, message: any): void {
-    const agent = this.agents.get(agentId);
+  private sendToAgent(agentId: string, message: Record<string, unknown>): void {
+    const agent = this.state.liveAgents.get(agentId);
     if (agent && agent.ws.readyState === WebSocket.OPEN) {
       agent.ws.send(JSON.stringify(message));
     }
   }
 
-  /**
-   * 广播消息
-   */
-  private broadcast(message: any, excludeAgentId?: string): void {
-    this.agents.forEach((agent, agentId) => {
+  private broadcast(message: Record<string, unknown>, excludeAgentId?: string): void {
+    this.state.liveAgents.forEach((agent, agentId) => {
       if (agentId !== excludeAgentId && agent.ws.readyState === WebSocket.OPEN) {
         agent.ws.send(JSON.stringify(message));
       }
     });
   }
 
-  /**
-   * 根据 WebSocket 获取 Agent
-   */
   private getAgentByWs(ws: WebSocket): AgentConnection | undefined {
-    for (const agent of this.agents.values()) {
+    for (const agent of this.state.liveAgents.values()) {
       if (agent.ws === ws) {
         return agent;
       }
     }
+
     return undefined;
   }
 
-  /**
-   * 处理断开连接
-   */
   private handleDisconnect(ws: WebSocket): void {
     const agent = this.getAgentByWs(ws);
-    if (agent) {
-      console.log(`👋 Agent disconnected: ${agent.name} (${agent.id})`);
-      this.agents.delete(agent.id);
-
-      this.broadcast({
-        type: 'agent_left',
-        data: {
-          agentId: agent.id,
-          name: agent.name,
-        },
-      });
+    if (!agent) {
+      return;
     }
+
+    console.log(`👋 Agent disconnected: ${agent.name} (${agent.id})`);
+    this.state.liveAgents.delete(agent.id);
+    this.state.markAgentOffline(agent.id);
+
+    this.broadcast({
+      type: 'agent_left',
+      data: {
+        agentId: agent.id,
+        name: agent.name,
+      },
+    });
   }
 
-  /**
-   * 心跳检测
-   */
   private heartbeat(): void {
-    this.agents.forEach((agent) => {
+    this.state.liveAgents.forEach((agent) => {
       if (agent.ws.readyState === WebSocket.OPEN) {
         agent.ws.send(JSON.stringify({ type: 'ping' }));
       }
     });
   }
 
-  /**
-   * 关闭服务器
-   */
   public close(): void {
     this.wss.close();
     console.log('🏰 Guild Server closed');
+  }
+
+  public getGuildSnapshot() {
+    return this.state.createSnapshot();
+  }
+
+  public getRecruitmentBookPacket() {
+    return buildRecruitmentBookPacket();
+  }
+
+  public joinGuildFromApi(payload: JoinGuildPayload): GuildJoinResult {
+    return this.state.joinGuild(payload);
   }
 }

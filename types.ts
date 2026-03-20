@@ -1,6 +1,226 @@
-// Adventurer's Guild - TypeScript Type Definitions
+// Adventurer's Guild - Shared Type Definitions
 
-// ============= Enums =============
+// ============= V1 Guild Domain =============
+
+export enum GuildMemberStatus {
+  ACTIVE = 'ACTIVE',
+  AWAY = 'AWAY',
+  SUSPENDED = 'SUSPENDED',
+}
+
+export enum GuildMemberRole {
+  CLIENT = 'CLIENT',
+  BUILDER = 'BUILDER',
+  HYBRID = 'HYBRID',
+  MODERATOR = 'MODERATOR',
+}
+
+export enum AgentClassification {
+  PERSONAL = 'PERSONAL',
+  FREE_AGENT = 'FREE_AGENT',
+  GUILD_SERVICE = 'GUILD_SERVICE',
+}
+
+export enum AgentAutonomyLevel {
+  SUPERVISED = 'SUPERVISED',
+  DELEGATED = 'DELEGATED',
+  AUTONOMOUS = 'AUTONOMOUS',
+}
+
+export enum AgentAvailability {
+  ONLINE = 'ONLINE',
+  IDLE = 'IDLE',
+  OFFLINE = 'OFFLINE',
+}
+
+export enum GuildQuestStatus {
+  OPEN = 'OPEN',
+  FORMING_PARTY = 'FORMING_PARTY',
+  ACTIVE = 'ACTIVE',
+  REVIEW = 'REVIEW',
+  COMPLETED = 'COMPLETED',
+  CANCELLED = 'CANCELLED',
+}
+
+export enum GuildPartyStatus {
+  FORMING = 'FORMING',
+  ACTIVE = 'ACTIVE',
+  DELIVERING = 'DELIVERING',
+  DISBANDED = 'DISBANDED',
+}
+
+export enum DelegationScope {
+  PUBLISH_QUEST = 'PUBLISH_QUEST',
+  ACCEPT_QUEST = 'ACCEPT_QUEST',
+  NEGOTIATE = 'NEGOTIATE',
+  COORDINATE_PARTY = 'COORDINATE_PARTY',
+  DELIVER_RESULTS = 'DELIVER_RESULTS',
+}
+
+export enum GuildUnitType {
+  MEMBER = 'MEMBER',
+  AGENT = 'AGENT',
+}
+
+export interface GuildReputation {
+  score: number;
+  tier: ReputationLevel;
+  badges: string[];
+  completedQuests: number;
+  reliability: number;
+}
+
+export interface GuildMember {
+  id: string;
+  handle: string;
+  displayName: string;
+  role: GuildMemberRole;
+  status: GuildMemberStatus;
+  bio: string;
+  specialties: string[];
+  homeRegion: string;
+  reputation: GuildReputation;
+  agentIds: string[];
+}
+
+export interface GuildAgent {
+  id: string;
+  handle: string;
+  displayName: string;
+  classification: AgentClassification;
+  autonomy: AgentAutonomyLevel;
+  availability: AgentAvailability;
+  ownerMemberId?: string;
+  operatorNotes: string;
+  capabilities: string[];
+  reputation: GuildReputation;
+}
+
+export interface GuildQuestReward {
+  amount: number;
+  currency: string;
+  model: 'FIXED' | 'NEGOTIABLE' | 'REV_SHARE';
+}
+
+export interface GuildQuestNeed {
+  role: string;
+  seats: number;
+  filled: number;
+  preferredUnit: ExecutorType;
+  requiredSkills: string[];
+}
+
+export interface GuildQuest {
+  id: string;
+  title: string;
+  summary: string;
+  status: GuildQuestStatus;
+  publisherMemberId?: string;
+  publisherAgentId?: string;
+  reward: GuildQuestReward;
+  tags: string[];
+  needs: GuildQuestNeed[];
+  trustRequirements: string[];
+  deadlineLabel: string;
+  partyId?: string;
+}
+
+export interface GuildPartyRosterEntry {
+  unitType: GuildUnitType;
+  unitId: string;
+  role: string;
+  joinedAtLabel: string;
+}
+
+export interface GuildParty {
+  id: string;
+  questId: string;
+  name: string;
+  status: GuildPartyStatus;
+  leaderUnitType: GuildUnitType;
+  leaderUnitId: string;
+  missionBrief: string;
+  roster: GuildPartyRosterEntry[];
+  openRoles: string[];
+}
+
+export interface GuildDelegation {
+  id: string;
+  memberId: string;
+  agentId: string;
+  scopes: DelegationScope[];
+  status: 'ACTIVE' | 'PAUSED';
+  operatingNote: string;
+}
+
+export interface GuildActivity {
+  id: string;
+  kind: 'QUEST_POSTED' | 'PARTY_FORMED' | 'AGENT_JOINED' | 'DELIVERABLE_SUBMITTED';
+  title: string;
+  detail: string;
+  timestampLabel: string;
+}
+
+export interface GuildSnapshot {
+  members: GuildMember[];
+  agents: GuildAgent[];
+  quests: GuildQuest[];
+  parties: GuildParty[];
+  delegations: GuildDelegation[];
+  activity: GuildActivity[];
+}
+
+export interface JoinGuildMemberInput {
+  id?: string;
+  handle?: string;
+  displayName: string;
+  role?: GuildMemberRole;
+  bio?: string;
+  specialties?: string[];
+  homeRegion?: string;
+}
+
+export interface JoinGuildAgentInput {
+  id?: string;
+  handle?: string;
+  displayName: string;
+  classification?: AgentClassification;
+  autonomy?: AgentAutonomyLevel;
+  availability?: AgentAvailability;
+  capabilities: string[];
+  operatorNotes?: string;
+}
+
+export interface JoinGuildDelegationInput {
+  scopes: DelegationScope[];
+  operatingNote?: string;
+  status?: 'ACTIVE' | 'PAUSED';
+}
+
+export interface JoinGuildPayload {
+  member?: JoinGuildMemberInput;
+  agent: JoinGuildAgentInput;
+  delegation?: JoinGuildDelegationInput;
+}
+
+export interface RecruitmentBookPacket {
+  name: string;
+  version: string;
+  thesis: string;
+  markdown: string;
+  http: {
+    recruitmentEndpoint: string;
+    joinEndpoint: string;
+  };
+  websocket: {
+    getBookMessageType: 'get_recruitment_book';
+    joinMessageType: 'join_guild';
+    legacyRegisterMessageType: 'register';
+  };
+  exampleJoinPayload: JoinGuildPayload;
+}
+
+// ============= Legacy Demo Types =============
 
 export enum UserRole {
   HUMAN = 'HUMAN',
@@ -8,10 +228,10 @@ export enum UserRole {
 }
 
 export enum ReputationLevel {
-  APPRENTICE = 'APPRENTICE',    // 见习生
-  REGULAR = 'REGULAR',          // 正式
-  ELITE = 'ELITE',              // 精英
-  LEGENDARY = 'LEGENDARY',      // 传奇
+  APPRENTICE = 'APPRENTICE',
+  REGULAR = 'REGULAR',
+  ELITE = 'ELITE',
+  LEGENDARY = 'LEGENDARY',
 }
 
 export enum QuestStatus {
@@ -43,8 +263,6 @@ export enum DisputeStatus {
   ESCALATED = 'ESCALATED',
 }
 
-// ============= Core Types =============
-
 export interface User {
   id: string;
   email: string;
@@ -62,7 +280,7 @@ export interface AgentConfig {
   modelType: string;
   capabilities: string[];
   sandboxTested: boolean;
-  testResults?: any;
+  testResults?: unknown;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -93,10 +311,10 @@ export interface Quest {
   reward: number;
   status: QuestStatus;
   targetExecutor: ExecutorType;
-  executor_type: ExecutorType; // 别名，用于新 UI
-  required_skills: string[]; // 所需技能
-  difficulty?: 'S' | 'A' | 'B' | 'C' | 'D' | 'E'; // 难度等级
-  deadline?: Date; // 截止日期
+  executor_type: ExecutorType;
+  required_skills: string[];
+  difficulty?: 'S' | 'A' | 'B' | 'C' | 'D' | 'E';
+  deadline?: Date;
   legalCheckResult?: LegalCheckResult;
   creatorId: string;
   assigneeId?: string;
@@ -129,7 +347,7 @@ export interface Dispute {
   questId: string;
   initiatorId: string;
   reason: string;
-  evidence?: any;
+  evidence?: unknown;
   status: DisputeStatus;
   votes: JuryVote[];
   resolution?: string;
@@ -147,13 +365,11 @@ export interface JuryVote {
   createdAt: Date;
 }
 
-// ============= Service Types =============
-
 export interface Adventurer extends User {
   reputation: Reputation;
   skills: string[];
   availability: boolean;
-  currentLoad: number; // 当前任务数
+  currentLoad: number;
 }
 
 export interface MatchResult {

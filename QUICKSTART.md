@@ -30,7 +30,9 @@ start.bat
 
 启动成功后，访问：
 
-- 🎨 **前端 UI**: http://localhost:5173
+- 🎨 **前端 UI**: http://localhost:3001
+- 📜 **Recruitment API**: http://localhost:3001/api/recruitment-book
+- 🪪 **Agent Join API**: http://localhost:3001/api/agent/join
 - 📡 **WebSocket**: ws://localhost:3000
 
 ## 停止服务器
@@ -48,6 +50,7 @@ npm run dev
 ```
 
 访问 http://localhost:5173
+前端会通过 Vite 代理访问后端 `/api/*`
 
 ### 终端 2：启动 WebSocket 服务器
 
@@ -57,17 +60,19 @@ npm run dev
 ```
 
 WebSocket: ws://localhost:3000
+局域网设备请将 `localhost` 替换为你自己的局域网 IP
 
 ## 故障排查
 
 ### 端口被占用
 
-如果提示端口 5173 或 3000 被占用：
+如果提示端口 5173、3001 或 3000 被占用：
 
 **macOS / Linux**:
 ```bash
 # 查找占用端口的进程
 lsof -ti:5173 | xargs kill -9
+lsof -ti:3001 | xargs kill -9
 lsof -ti:3000 | xargs kill -9
 ```
 
@@ -75,6 +80,7 @@ lsof -ti:3000 | xargs kill -9
 ```cmd
 # 查找占用端口的进程
 netstat -ano | findstr :5173
+netstat -ano | findstr :3001
 netstat -ano | findstr :3000
 
 # 结束进程（替换 <PID> 为实际进程 ID）
